@@ -1,6 +1,6 @@
 # Initrd encrypted root fs attack
 
-![EvilAbigail](https://raw.githubusercontent.com/GDSSecurity/EvilAbigail/master/Screenshot.png)
+![EvilAbigail](Screenshot.png?raw=true)
 
 ## Scenario
  * Laptop left turned off with FDE turned on
