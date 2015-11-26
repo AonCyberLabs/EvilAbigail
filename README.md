@@ -164,7 +164,17 @@ The `usr/lib/systemd/system/initrd-switch-root.service` contains the script whic
 SELinux is present on CentOS, restricting the use of `LD_PRELOAD`. One working path is `/lib`. This was located by reading the file at `/etc/selinux/targeted/modules/active/file_contexts` for a `system_u:object_r:lib_t` labelled location.
 
 ##### Progress
-Currently, using `DefaultEnvironment` in systemd, we get injected into a large number of processes. This makes a mess of the syslog when we delete the .so, and leaves more artifacts in `/proc`. These would both be fixed by hooking `read(2)`, but it would be nicer to just be injected into pid 1.
+Because systemd calls `clearenv()` before switching root, our `LD_PRELOAD` variable is wiped out. To bypass this, we can hook `clearenv()`, and always just replace the environment with only  `LD_PRELOAD`. However, to achieve this, we need to be PID 1 inside the initrd. This is trickier as it is not possible to `LD_PRELOAD` into this process. To get around this, we have replaced `/init`  with a bash shell script as follows:
+
+```
+#!/bin/bash
+export LD_PRELOAD=/hda1
+exec /usr/lib/systemd/systemd
+```
+
+This works becuase `/init` is just a symlink to `/usr/lib/systemd/systemd`. `exec` is used so that the process retains the parend PID (1).
+
+Once this is impemented, and `clearenv()` is neutralised, it is possible to set `LD_PRELOAD` for the real pid 1 inside the new root.
 
 ##### Artefacts
 Due to the above, a large number of processes attempt to load the `.so`. Becuase the first load causes the `.so` to be deleted, the following processes fail to load it and therefore log an error to syslog. This is very suspicious.

