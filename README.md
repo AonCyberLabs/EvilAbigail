@@ -177,13 +177,10 @@ This works becuase `/init` is just a symlink to `/usr/lib/systemd/systemd`. `exe
 Once this is impemented, and `clearenv()` is neutralised, it is possible to set `LD_PRELOAD` for the real pid 1 inside the new root.
 
 ##### Artefacts
-Due to the above, a large number of processes attempt to load the `.so`. Becuase the first load causes the `.so` to be deleted, the following processes fail to load it and therefore log an error to syslog. This is very suspicious.
+As above, the .so shows up in `/proc/1/maps`, `/proc/1/environ` and `ps` output.
 
 ## Todo
- * Stop using DefaultEnvironment for CentOS, we're currently injecting into
-   a lot of processes, making a mess of the syslog when we delete ourselves. We
-   only need one shell. IDEALLY: Make it into pid 1 so we can set or unset env
-   as we want.
+ * CentOS/Fedora self delete
  * Add in CentOS password retrieval (Possibly requiring hooking)
  * Hide from:
     * /proc/*/maps
